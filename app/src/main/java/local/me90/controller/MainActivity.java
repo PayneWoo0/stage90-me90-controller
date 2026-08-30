@@ -65,7 +65,7 @@ public final class MainActivity extends Activity {
     private final List<Button> chainButtons = new ArrayList<>();
     private UsbMidiClient midi;
     private LinearLayout chainRow, editorPanel;
-    private TextView status, patchTitle, selectedTitle, tunerNote, tunerPitch, livePatchTitle, livePatchName;
+    private TextView status, patchTitle, selectedTitle, tunerNote, tunerPitch;
     private TunerMeter tunerMeter;
     private Block selectedBlock;
     private boolean chinese = true, building, refreshQueued, liveMode, sliderTracking;
@@ -91,7 +91,7 @@ public final class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         Arrays.fill(state.enabled, true);
         midi = new UsbMidiClient(this, new UsbMidiClient.Listener() {
-            @Override public void onConnected(UsbDevice device) { runOnUiThread(() -> { setStatus(t("已连接，正在验证", "Connected · preparing"), false); connectionPhase = 1; try { midi.requestIdentity(); } catch (RuntimeException ignored) { beginHandshake(); } status.postDelayed(() -> { if (connectionPhase == 1) beginHandshake(); }, 600); }); }
+            @Override public void onConnected(UsbDevice device) { runOnUiThread(() -> { setStatus(t("已连接，正在验证", "Connected · preparing"), false); connectionPhase = 1; try { midi.requestIdentity(); } catch (RuntimeException ignored) { beginHandshake(); } postUi(() -> { if (connectionPhase == 1) beginHandshake(); }, 600); }); }
             @Override public void onError(String message) { runOnUiThread(() -> setStatus(t("连接失败", "Connection failed"), true)); }
             @Override public void onSysEx(byte[] message) { handleMessage(message); }
         });
@@ -138,16 +138,12 @@ public final class MainActivity extends Activity {
         LinearLayout root = column(); root.setGravity(Gravity.CENTER_HORIZONTAL); root.setPadding(dp(22), dp(12), dp(22), dp(12)); root.setBackgroundColor(BG);
         LinearLayout top = new LinearLayout(this); top.setGravity(Gravity.CENTER_VERTICAL);
         TextView title = text("LIVE", 25, GREEN, true); top.addView(title, new LinearLayout.LayoutParams(dp(82), -2));
-        LinearLayout liveStatus = column(); liveStatus.setGravity(Gravity.CENTER);
-        TextView now = text(livePatchText(), 28, TEXT, true); now.setGravity(Gravity.CENTER); liveStatus.addView(now, match());
-        TextView liveName = text(patchNameOrFallback(), 15, MUTED, true); liveName.setGravity(Gravity.CENTER); liveStatus.addView(liveName, match());
-        livePatchTitle = now; livePatchName = liveName;
-        top.addView(liveStatus, new LinearLayout.LayoutParams(0, -2, 1));
+        patchTitle = text(patchText(), 25, TEXT, true); patchTitle.setGravity(Gravity.CENTER); top.addView(patchTitle, new LinearLayout.LayoutParams(0, -2, 1));
         Button exit = button("×", false); exit.setTextSize(25); exit.setOnClickListener(v -> exitLive()); top.addView(exit, new LinearLayout.LayoutParams(dp(60), dp(48))); root.addView(top, match());
         LinearLayout dials = new LinearLayout(this); dials.setGravity(Gravity.CENTER); dials.setOrientation(LinearLayout.HORIZONTAL);
-        int userPatch = userPatchIndex();
-        bankDial = new PatchDial(this, 9, userPatch / 4, PURPLE, value -> { int current = userPatchIndex(); selectPatch(value * 4 + current % 4); updateLiveLabels(); });
-        slotDial = new PatchDial(this, 4, userPatch % 4, GREEN, value -> { int current = userPatchIndex(); selectPatch(current / 4 * 4 + value); updateLiveLabels(); });
+        int userPatch = state.patch < 36 ? state.patch : 0;
+        bankDial = new PatchDial(this, 9, userPatch / 4, PURPLE, value -> { int current = state.patch < 36 ? state.patch : 0; selectPatch(value * 4 + current % 4); });
+        slotDial = new PatchDial(this, 4, userPatch % 4, GREEN, value -> { int current = state.patch < 36 ? state.patch : 0; selectPatch(current / 4 * 4 + value); });
         dials.addView(bankDial, new LinearLayout.LayoutParams(0, -1, 1)); dials.addView(slotDial, new LinearLayout.LayoutParams(0, -1, 1)); root.addView(dials, new LinearLayout.LayoutParams(-1, 0, 1));
         return root;
     }
@@ -250,7 +246,7 @@ public final class MainActivity extends Activity {
     private void beginHandshake() {
         if (connectionPhase > 2) return;
         connectionPhase = 2;
-        status.postDelayed(() -> { if (connectionPhase < 5) beginFallbackSync(); }, 1800);
+        postUi(() -> { if (connectionPhase < 5) beginFallbackSync(); }, 1800);
         new Thread(() -> { try { midi.requestRange(0x7F, 0, 0, 0, 1); } catch (RuntimeException ignored) { beginFallbackSync(); } }, "Stage90-handshake").start();
     }
 
@@ -297,7 +293,7 @@ public final class MainActivity extends Activity {
     }
 
     private void queueRefresh() {
-        runOnUiThread(() -> { if (refreshQueued) return; refreshQueued = true; status.postDelayed(() -> { refreshQueued = false; if (liveMode) { int userPatch = userPatchIndex(); if (bankDial != null) { bankDial.setValue(userPatch / 4); slotDial.setValue(userPatch % 4); } updateLiveLabels(); } else { if (patchTitle != null) patchTitle.setText(patchText()); if (!sliderTracking) renderEditor(); } }, 45); });
+        runOnUiThread(() -> { if (refreshQueued) return; refreshQueued = true; postUi(() -> { refreshQueued = false; if (patchTitle != null) patchTitle.setText(patchText()); if (!liveMode && !sliderTracking) renderEditor(); }, 45); });
     }
 
     private void toggle(Block block) { int idx = indexOf(block); if (!block.switchable) return; state.enabled[idx] = !state.enabled[idx]; send(block, 0, state.enabled[idx] ? 1 : 0); renderEditor(); }
@@ -309,7 +305,7 @@ public final class MainActivity extends Activity {
         new AlertDialog.Builder(this).setTitle(t("选择音色", "Select patch")).setItems(items, (d, value) -> selectPatch(value)).show();
     }
 
-    private void selectPatch(int patch) { state.patch = clamp(patch, 0, 71); pendingPatchSync = state.patch; try { midi.sendDt1(0x7F, 0, 1, 0, new int[] { 0, state.patch }); setStatus(t("正在切换", "Changing"), false); status.postDelayed(() -> { if (pendingPatchSync >= 0) { pendingPatchSync = -1; requestFullSync(); } }, 700); } catch (RuntimeException e) { pendingPatchSync = -1; setStatus(t("操作失败", "Operation failed"), true); } queueRefresh(); }
+    private void selectPatch(int patch) { state.patch = clamp(patch, 0, 71); pendingPatchSync = state.patch; try { midi.sendDt1(0x7F, 0, 1, 0, new int[] { 0, state.patch }); setStatus(t("正在切换", "Changing"), false); postUi(() -> { if (pendingPatchSync >= 0) { pendingPatchSync = -1; requestFullSync(); } }, 700); } catch (RuntimeException e) { pendingPatchSync = -1; setStatus(t("操作失败", "Operation failed"), true); } queueRefresh(); }
     private void acceptDevicePatch(int value) {
         int patch = clamp(value, 0, 71);
         // A patch command is acknowledged by the requested number. Do not let a late report from
@@ -319,8 +315,7 @@ public final class MainActivity extends Activity {
         if (pendingPatchSync >= 0) completePatchChange(); else if (changed) requestFullSync();
     }
     private void completePatchChange() { if (pendingPatchSync >= 0) { pendingPatchSync = -1; requestFullSync(); } }
-    private void updateLiveLabels() { if (livePatchTitle != null) livePatchTitle.setText(livePatchText()); if (livePatchName != null) livePatchName.setText(patchNameOrFallback()); }
-    private void exitLive() { liveMode = false; livePatchTitle = null; livePatchName = null; bankDial = null; slotDial = null; setContentView(buildEditorView()); status.postDelayed(this::requestFullSync, 100); }
+    private void exitLive() { liveMode = false; bankDial = null; slotDial = null; setContentView(buildEditorView()); queueRefresh(); }
     private void showWriteDialog() {
         LinearLayout body = column(); body.setPadding(dp(20), 0, dp(20), 0); EditText name = new EditText(this); name.setHint(t("音色名称", "Patch name")); name.setText(patchName()); body.addView(name, match());
         Spinner slot = simpleSpinner(userSlots()); body.addView(slot, match()); new AlertDialog.Builder(this).setTitle(t("写入当前音色", "Write current patch")).setView(body).setNegativeButton(t("取消", "Cancel"), null).setPositiveButton(t("写入", "Write"), (d, x) -> { try { midi.sendDt1(0x20, 0, 0, 0, asciiName(name.getText().toString())); midi.sendDt1(0x7F, 0, 1, 4, new int[] { 0, slot.getSelectedItemPosition() }); setStatus(t("已写入", "Written"), false); } catch (RuntimeException e) { setStatus(e.getMessage(), true); } }).show();
@@ -358,11 +353,12 @@ public final class MainActivity extends Activity {
     private static String noteName(int n) { String[] names = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" }; return n == 12 ? "–" : names[Math.abs(n) % 12]; }
 
     private int indexOf(Block block) { for (int i = 0; i < BLOCKS.length; i++) if (BLOCKS[i] == block) return i; return 0; }
-    private String patchText() { return (state.patch < 36 ? "USER " : "PRESET ") + String.format("%02d", state.patch % 36 + 1) + (patchName().isEmpty() ? "" : " · " + patchName()); }
-    private int userPatchIndex() { return state.patch >= 0 && state.patch < 36 ? state.patch : 0; }
-    private String livePatchText() { int userPatch = userPatchIndex(); return "USER " + (userPatch / 4 + 1) + "-" + (userPatch % 4 + 1); }
+    private String patchText() {
+        String name = patchName();
+        if (liveMode && state.patch < 36) return "USER " + (state.patch / 4 + 1) + "-" + (state.patch % 4 + 1) + (name.isEmpty() ? "" : "\n" + name);
+        return (state.patch < 36 ? "USER " : "PRESET ") + String.format("%02d", state.patch % 36 + 1) + (name.isEmpty() ? "" : " · " + name);
+    }
     private String patchName() { return new String(toBytes(state.patchNameBytes), StandardCharsets.US_ASCII).trim(); }
-    private String patchNameOrFallback() { String name = patchName(); return name.isEmpty() ? "—" : name; }
     private static byte[] toBytes(int[] values) { byte[] r = new byte[values.length]; for (int i = 0; i < values.length; i++) r[i] = (byte) values[i]; return r; }
     private static int[] asciiName(String name) { byte[] raw = name.getBytes(StandardCharsets.US_ASCII); int[] result = new int[16]; Arrays.fill(result, 0x20); for (int i = 0; i < Math.min(16, raw.length); i++) result[i] = raw[i] & 127; return result; }
     private String[] userSlots() { String[] slots = new String[36]; for (int i = 0; i < 36; i++) slots[i] = String.format("USER %02d", i + 1); return slots; }
@@ -383,6 +379,7 @@ public final class MainActivity extends Activity {
     private static int textOn(int color) { return Color.red(color) * 299 + Color.green(color) * 587 + Color.blue(color) * 114 > 145000 ? Color.rgb(25, 22, 32) : Color.WHITE; }
     private String t(String zh, String en) { return chinese ? zh : en; }
     private void setStatus(String message, boolean error) { if (status != null) status.setText(message); }
+    private void postUi(Runnable action, long delayMs) { getWindow().getDecorView().postDelayed(action, delayMs); }
 
     private interface Choice { void pick(int value); }
     private static final class Block { final String id, shortName; final int a, b, c; final boolean switchable; final String[] main, alt; final int parameterCount, firstParam; Block(String id, String shortName, int a, int b, int c, boolean switchable, String[] main, String[] alt, int parameterCount, int firstParam) { this.id = id; this.shortName = shortName; this.a = a; this.b = b; this.c = c; this.switchable = switchable; this.main = main; this.alt = alt; this.parameterCount = parameterCount; this.firstParam = firstParam; } }
@@ -406,10 +403,21 @@ public final class MainActivity extends Activity {
     /** A forgiving angular selector: values change only after crossing a tick midpoint. */
     private static final class PatchDial extends View {
         interface Change { void changed(int value); }
-        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG); private final int count, color; private final Change change; private int value;
-        PatchDial(Activity context, int count, int value, int color, Change change) { super(context); this.count = count; this.value = Math.max(0, Math.min(count - 1, value)); this.color = color; this.change = change; setLayerType(View.LAYER_TYPE_SOFTWARE, null); }
-        void setValue(int next) { value = Math.max(0, Math.min(count - 1, next)); invalidate(); }
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG); private final int count, color; private final Change change; private int value, committedValue;
+        PatchDial(Activity context, int count, int value, int color, Change change) { super(context); this.count = count; this.value = Math.max(0, Math.min(count - 1, value)); this.committedValue = this.value; this.color = color; this.change = change; setLayerType(View.LAYER_TYPE_SOFTWARE, null); }
+        void setValue(int next) { value = Math.max(0, Math.min(count - 1, next)); committedValue = value; invalidate(); }
         @Override protected void onDraw(Canvas canvas) { super.onDraw(canvas); float w = getWidth(), h = getHeight(), r = Math.min(w, h) * .30f, cx = w / 2, cy = h / 2; paint.setStyle(Paint.Style.FILL); paint.setColor(Color.rgb(39, 26, 63)); canvas.drawCircle(cx, cy, r + 20, paint); paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(12); paint.setColor(color); canvas.drawArc(new RectF(cx - r, cy - r, cx + r, cy + r), -90, 360, false, paint); paint.setStrokeWidth(3); paint.setTextAlign(Paint.Align.CENTER); paint.setTypeface(Typeface.DEFAULT_BOLD); for (int i = 0; i < count; i++) { double a = -Math.PI / 2 + 2 * Math.PI * i / count; float x1 = (float) (cx + Math.cos(a) * r * .86), y1 = (float) (cy + Math.sin(a) * r * .86), x2 = (float) (cx + Math.cos(a) * r * 1.07), y2 = (float) (cy + Math.sin(a) * r * 1.07); paint.setColor(color); canvas.drawLine(x1, y1, x2, y2, paint); paint.setStyle(Paint.Style.FILL); paint.setTextSize(count > 6 ? 13 : 16); canvas.drawText(String.valueOf(i + 1), (float) (cx + Math.cos(a) * r * 1.30), (float) (cy + Math.sin(a) * r * 1.30 + 5), paint); paint.setStyle(Paint.Style.STROKE); } paint.setStrokeWidth(6); paint.setColor(Color.WHITE); double angle = -Math.PI / 2 + 2 * Math.PI * value / count; canvas.drawLine(cx, cy, (float) (cx + Math.cos(angle) * r * .72), (float) (cy + Math.sin(angle) * r * .72), paint); paint.setStyle(Paint.Style.FILL); paint.setTextSize(28); paint.setColor(Color.WHITE); canvas.drawText(String.valueOf(value + 1), cx, cy + 10, paint); }
-        @Override public boolean onTouchEvent(MotionEvent event) { if (event.getAction() != MotionEvent.ACTION_DOWN && event.getAction() != MotionEvent.ACTION_MOVE) return true; float x = event.getX() - getWidth() / 2f, y = event.getY() - getHeight() / 2f; double angle = Math.atan2(y, x) + Math.PI / 2; if (angle < 0) angle += Math.PI * 2; int next = (int) Math.floor((angle + Math.PI / count) / (2 * Math.PI / count)) % count; if (next != value) { value = next; invalidate(); change.changed(value); } return true; }
+        @Override public boolean onTouchEvent(MotionEvent event) {
+            int action = event.getAction();
+            if (action == MotionEvent.ACTION_DOWN) return true;
+            if (action == MotionEvent.ACTION_MOVE) {
+                float x = event.getX() - getWidth() / 2f, y = event.getY() - getHeight() / 2f; double angle = Math.atan2(y, x) + Math.PI / 2; if (angle < 0) angle += Math.PI * 2;
+                int next = (int) Math.floor((angle + Math.PI / count) / (2 * Math.PI / count)) % count;
+                if (next != value) { value = next; invalidate(); }
+                return true;
+            }
+            if (action == MotionEvent.ACTION_UP && value != committedValue) { committedValue = value; change.changed(value); }
+            return true;
+        }
     }
 }

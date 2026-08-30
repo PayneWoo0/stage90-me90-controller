@@ -265,7 +265,7 @@ public final class MainActivity extends Activity {
     private void beginFallbackSync() { if (connectionPhase < 5) { connectionPhase = 5; requestFullSync(); } }
 
     private void applyInbound(int a, int b, int c, int d, int[] data) {
-        if (a == 0x7F && b == 0 && c == 2 && d == 0 && data.length >= 2) { state.tunerNote = data[0]; state.tunerPitch = data[1]; updateTuner(); return; }
+        if (a == 0x7F && b == 0 && c == 2 && d == 0 && data.length >= 2) { state.tunerNote = data[0]; state.tunerPitch = data[1]; state.tunerHasInput = true; updateTuner(); return; }
         if (a == 0x7F && b == 0 && c == 2 && d == 6 && data.length >= 1) { state.manualMode = data[0] != 0; return; }
         // The processor uses this 4-bit packed address when a physical footswitch changes memory.
         if (a == 0 && b == 0 && c == 0 && d == 0 && data.length >= 2) { acceptDevicePatch((data[0] << 4) | data[1]); return; }
@@ -301,8 +301,26 @@ public final class MainActivity extends Activity {
     private void sendSystem(int offset, int value) { try { midi.sendParameter(0x10, 0, 0, offset, value); setStatus(t("已更新", "Updated"), false); } catch (RuntimeException e) { setStatus(t("操作失败", "Operation failed"), true); } }
 
     private void showPatchPicker() {
-        String[] items = new String[72]; for (int i = 0; i < 36; i++) items[i] = String.format("USER %02d", i + 1); for (int i = 0; i < 36; i++) items[36 + i] = String.format("PRESET %02d", i + 1);
-        new AlertDialog.Builder(this).setTitle(t("选择音色", "Select patch")).setItems(items, (d, value) -> selectPatch(value)).show();
+        LinearLayout columns = new LinearLayout(this); columns.setOrientation(LinearLayout.HORIZONTAL); columns.setPadding(dp(14), 0, dp(14), dp(4));
+        final AlertDialog[] dialog = new AlertDialog[1];
+        Choice choose = value -> { selectPatch(value); if (dialog[0] != null) dialog[0].dismiss(); };
+        columns.addView(patchColumn("USER", 0, choose), new LinearLayout.LayoutParams(0, dp(420), 1));
+        View gap = new View(this); columns.addView(gap, new LinearLayout.LayoutParams(dp(8), 1));
+        columns.addView(patchColumn("PRESET", 36, choose), new LinearLayout.LayoutParams(0, dp(420), 1));
+        dialog[0] = new AlertDialog.Builder(this).setTitle(t("选择音色", "Select patch")).setView(columns).setNegativeButton(t("取消", "Cancel"), null).create();
+        dialog[0].show();
+    }
+
+    /** Two independently scrolling lists keep USER and PRESET choices equally close at hand. */
+    private View patchColumn(String title, int firstPatch, Choice choose) {
+        LinearLayout column = column(); TextView heading = text(title, 13, MUTED, true); heading.setGravity(Gravity.CENTER); heading.setPadding(0, dp(4), 0, dp(6)); column.addView(heading, match());
+        ScrollView scroll = new ScrollView(this); LinearLayout choices = column(); choices.setPadding(0, 0, 0, dp(8));
+        for (int i = 0; i < 36; i++) {
+            int patch = firstPatch + i; Button item = button(String.format("%02d", i + 1), true); item.setTextSize(14);
+            if (patch == state.patch) item.setBackground(background(PURPLE, 10));
+            item.setOnClickListener(v -> choose.pick(patch)); LinearLayout.LayoutParams params = match(); params.topMargin = dp(3); choices.addView(item, params);
+        }
+        scroll.addView(choices); column.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1)); return column;
     }
 
     private void selectPatch(int patch) { state.patch = clamp(patch, 0, 71); pendingPatchSync = state.patch; try { midi.sendDt1(0x7F, 0, 1, 0, new int[] { 0, state.patch }); setStatus(t("正在切换", "Changing"), false); postUi(() -> { if (pendingPatchSync >= 0) { pendingPatchSync = -1; requestFullSync(); } }, 700); } catch (RuntimeException e) { pendingPatchSync = -1; setStatus(t("操作失败", "Operation failed"), true); } queueRefresh(); }
@@ -337,19 +355,20 @@ public final class MainActivity extends Activity {
 
     private void showTuner() {
         LinearLayout body = column(); body.setGravity(Gravity.CENTER_HORIZONTAL); body.setPadding(dp(24), dp(12), dp(24), dp(14));
+        state.tunerHasInput = false;
         tunerNote = text(noteName(state.tunerNote), 52, GREEN, true); tunerNote.setGravity(Gravity.CENTER); body.addView(tunerNote, match());
         tunerMeter = new TunerMeter(this); body.addView(tunerMeter, new LinearLayout.LayoutParams(-1, dp(118)));
         LinearLayout direction = new LinearLayout(this); direction.setGravity(Gravity.CENTER_VERTICAL);
         TextView low = text(t("♭ 偏低", "♭ LOWER"), 12, MUTED, true); direction.addView(low, new LinearLayout.LayoutParams(0, -2, 1));
         tunerPitch = text(tunerText(), 18, TEXT, true); tunerPitch.setGravity(Gravity.CENTER); direction.addView(tunerPitch, new LinearLayout.LayoutParams(dp(100), -2));
         TextView high = text(t("偏高 ♯", "HIGHER ♯"), 12, MUTED, true); high.setGravity(Gravity.RIGHT); direction.addView(high, new LinearLayout.LayoutParams(0, -2, 1)); body.addView(direction, match());
-        tunerMeter.setPitch(state.tunerPitch);
+        tunerMeter.setPitch(state.tunerHasInput ? state.tunerPitch : -1);
         try { midi.sendParameter(0x7F, 0, 0, 2, 2); } catch (RuntimeException e) { setStatus(e.getMessage(), true); }
         new AlertDialog.Builder(this).setTitle(t("调音器", "Tuner")).setView(body).setNegativeButton(t("关闭", "Close"), (d, x) -> { try { midi.sendParameter(0x7F, 0, 0, 2, 1); } catch (RuntimeException ignored) { } tunerNote = null; tunerPitch = null; tunerMeter = null; }).show();
     }
 
-    private void updateTuner() { runOnUiThread(() -> { if (tunerNote != null) tunerNote.setText(noteName(state.tunerNote)); if (tunerPitch != null) tunerPitch.setText(tunerText()); if (tunerMeter != null) tunerMeter.setPitch(state.tunerPitch); }); }
-    private String tunerText() { int delta = state.tunerPitch - 50; return delta == 0 ? t("音准准确", "IN TUNE") : delta < 0 ? t("偏低 ", "LOWER ") + Math.abs(delta) : t("偏高 ", "HIGHER ") + Math.abs(delta); }
+    private void updateTuner() { runOnUiThread(() -> { if (tunerNote != null) tunerNote.setText(noteName(state.tunerNote)); if (tunerPitch != null) tunerPitch.setText(tunerText()); if (tunerMeter != null) tunerMeter.setPitch(state.tunerHasInput ? state.tunerPitch : -1); }); }
+    private String tunerText() { if (!state.tunerHasInput) return ""; int delta = state.tunerPitch - 50; return delta == 0 ? t("音准准确", "IN TUNE") : delta < 0 ? t("偏低 ", "LOWER ") + Math.abs(delta) : t("偏高 ", "HIGHER ") + Math.abs(delta); }
     private static String noteName(int n) { String[] names = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" }; return n == 12 ? "–" : names[Math.abs(n) % 12]; }
 
     private int indexOf(Block block) { for (int i = 0; i < BLOCKS.length; i++) if (BLOCKS[i] == block) return i; return 0; }
@@ -383,20 +402,19 @@ public final class MainActivity extends Activity {
 
     private interface Choice { void pick(int value); }
     private static final class Block { final String id, shortName; final int a, b, c; final boolean switchable; final String[] main, alt; final int parameterCount, firstParam; Block(String id, String shortName, int a, int b, int c, boolean switchable, String[] main, String[] alt, int parameterCount, int firstParam) { this.id = id; this.shortName = shortName; this.a = a; this.b = b; this.c = c; this.switchable = switchable; this.main = main; this.alt = alt; this.parameterCount = parameterCount; this.firstParam = firstParam; } }
-    private static final class State { final boolean[] enabled = new boolean[12]; final int[] type = new int[12], subtype = new int[12]; final int[][] parameter = new int[12][10]; final int[] patchNameBytes = new int[16]; boolean manualMode; int cab, output, sendReturnPost, tunerMute, tunerPitchRef = 5, patch, tunerNote = 12, tunerPitch = 50; }
+    private static final class State { final boolean[] enabled = new boolean[12]; final int[] type = new int[12], subtype = new int[12]; final int[][] parameter = new int[12][10]; final int[] patchNameBytes = new int[16]; boolean manualMode, tunerHasInput; int cab, output, sendReturnPost, tunerMute, tunerPitchRef = 5, patch, tunerNote = 12, tunerPitch = 50; }
 
     /** Dial-style tuning indicator; the needle points left when flat and right when sharp. */
     private static final class TunerMeter extends View {
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG); private int pitch = 50;
         TunerMeter(Activity context) { super(context); }
-        void setPitch(int value) { pitch = clamp(value, 0, 100); invalidate(); }
+        void setPitch(int value) { pitch = value < 0 ? -1 : clamp(value, 0, 100); invalidate(); }
         @Override protected void onDraw(Canvas canvas) {
             super.onDraw(canvas); float w = getWidth(), h = getHeight(), cx = w / 2f, cy = h * .92f, r = Math.min(w * .39f, h * .82f);
             paint.setStyle(Paint.Style.STROKE); paint.setStrokeCap(Paint.Cap.ROUND); paint.setStrokeWidth(5); paint.setColor(Color.rgb(79, 68, 98));
             canvas.drawArc(new RectF(cx-r, cy-r, cx+r, cy+r), 200, 140, false, paint);
             for (int i = 0; i <= 16; i++) { float degrees = 200 + 140 * i / 16f; double rad = Math.toRadians(degrees); float inner = r - (i == 8 ? 17 : 10); float x1 = (float) (cx + Math.cos(rad) * inner), y1 = (float) (cy + Math.sin(rad) * inner); float x2 = (float) (cx + Math.cos(rad) * (r + 3)), y2 = (float) (cy + Math.sin(rad) * (r + 3)); paint.setStrokeWidth(i == 8 ? 4 : 2); paint.setColor(i == 8 ? Color.rgb(157, 255, 65) : Color.rgb(137, 119, 166)); canvas.drawLine(x1, y1, x2, y2, paint); }
-            float delta = (pitch - 50) / 50f; double needle = Math.toRadians(270 + delta * 70); paint.setStrokeWidth(6); paint.setColor(Math.abs(delta) < .06f ? Color.rgb(157, 255, 65) : Color.rgb(154, 80, 255)); canvas.drawLine(cx, cy, (float) (cx + Math.cos(needle) * (r - 24)), (float) (cy + Math.sin(needle) * (r - 24)), paint);
-            paint.setStyle(Paint.Style.FILL); paint.setColor(Color.WHITE); canvas.drawCircle(cx, cy, 8, paint); paint.setColor(Math.abs(delta) < .06f ? Color.rgb(157, 255, 65) : Color.rgb(154, 80, 255)); canvas.drawCircle(cx, cy, 4, paint);
+            if (pitch >= 0) { float delta = (pitch - 50) / 50f; double needle = Math.toRadians(270 + delta * 70); paint.setStrokeWidth(6); paint.setColor(Math.abs(delta) < .06f ? Color.rgb(157, 255, 65) : Color.rgb(154, 80, 255)); canvas.drawLine(cx, cy, (float) (cx + Math.cos(needle) * (r - 24)), (float) (cy + Math.sin(needle) * (r - 24)), paint); paint.setStyle(Paint.Style.FILL); paint.setColor(Color.WHITE); canvas.drawCircle(cx, cy, 8, paint); paint.setColor(Math.abs(delta) < .06f ? Color.rgb(157, 255, 65) : Color.rgb(154, 80, 255)); canvas.drawCircle(cx, cy, 4, paint); }
         }
     }
 

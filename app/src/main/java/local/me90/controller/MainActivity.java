@@ -65,12 +65,13 @@ public final class MainActivity extends Activity {
     private final List<Button> chainButtons = new ArrayList<>();
     private UsbMidiClient midi;
     private LinearLayout chainRow, editorPanel;
-    private TextView status, patchTitle, selectedTitle, tunerNote, tunerPitch;
+    private TextView status, patchTitle, selectedTitle, tunerNote, tunerPitch, liveGroupLabel;
     private TunerMeter tunerMeter;
     private Block selectedBlock;
-    private boolean chinese = true, building, refreshQueued, liveMode, sliderTracking;
-    private int connectionPhase, pendingPatchSync = -1;
+    private boolean chinese = true, building, refreshQueued, liveMode, sliderTracking, syncingLiveGroup;
+    private int connectionPhase, pendingPatchSync = -1, tunerInputGeneration;
     private PatchDial bankDial, slotDial;
+    private Switch liveGroupSwitch;
 
     private static final Block[] BLOCKS = {
             new Block("COMP", "COMP / FX1", 0x20, 0x00, 0x10, true, COMP_MAIN, COMP_ALT, 3, 3),
@@ -140,10 +141,13 @@ public final class MainActivity extends Activity {
         TextView title = text("LIVE", 25, GREEN, true); top.addView(title, new LinearLayout.LayoutParams(dp(82), -2));
         patchTitle = text(patchText(), 25, TEXT, true); patchTitle.setGravity(Gravity.CENTER); top.addView(patchTitle, new LinearLayout.LayoutParams(0, -2, 1));
         Button exit = button("×", false); exit.setTextSize(25); exit.setOnClickListener(v -> exitLive()); top.addView(exit, new LinearLayout.LayoutParams(dp(60), dp(48))); root.addView(top, match());
+        int patchIndex = state.patch % 36;
+        LinearLayout group = new LinearLayout(this); group.setGravity(Gravity.CENTER); group.setPadding(dp(14), dp(3), dp(8), dp(3)); group.setBackground(background(SURFACE_ALT, 18));
+        liveGroupLabel = text(state.patch < 36 ? "USER" : "PRESET", 13, TEXT, true); group.addView(liveGroupLabel, new LinearLayout.LayoutParams(dp(76), -2));
+        liveGroupSwitch = new Switch(this); liveGroupSwitch.setChecked(state.patch >= 36); liveGroupSwitch.setShowText(false); liveGroupSwitch.setOnCheckedChangeListener((v, preset) -> { if (!syncingLiveGroup) selectPatch((preset ? 36 : 0) + state.patch % 36); }); group.addView(liveGroupSwitch); root.addView(group, top(4));
         LinearLayout dials = new LinearLayout(this); dials.setGravity(Gravity.CENTER); dials.setOrientation(LinearLayout.HORIZONTAL);
-        int userPatch = state.patch < 36 ? state.patch : 0;
-        bankDial = new PatchDial(this, 9, userPatch / 4, PURPLE, value -> { int current = state.patch < 36 ? state.patch : 0; selectPatch(value * 4 + current % 4); });
-        slotDial = new PatchDial(this, 4, userPatch % 4, GREEN, value -> { int current = state.patch < 36 ? state.patch : 0; selectPatch(current / 4 * 4 + value); });
+        bankDial = new PatchDial(this, 9, patchIndex / 4, PURPLE, value -> selectPatch((state.patch < 36 ? 0 : 36) + value * 4 + state.patch % 4));
+        slotDial = new PatchDial(this, 4, patchIndex % 4, GREEN, value -> selectPatch((state.patch < 36 ? 0 : 36) + state.patch % 36 / 4 * 4 + value));
         dials.addView(bankDial, new LinearLayout.LayoutParams(0, -1, 1)); dials.addView(slotDial, new LinearLayout.LayoutParams(0, -1, 1)); root.addView(dials, new LinearLayout.LayoutParams(-1, 0, 1));
         return root;
     }
@@ -265,7 +269,7 @@ public final class MainActivity extends Activity {
     private void beginFallbackSync() { if (connectionPhase < 5) { connectionPhase = 5; requestFullSync(); } }
 
     private void applyInbound(int a, int b, int c, int d, int[] data) {
-        if (a == 0x7F && b == 0 && c == 2 && d == 0 && data.length >= 2) { state.tunerNote = data[0]; state.tunerPitch = data[1]; state.tunerHasInput = true; updateTuner(); return; }
+        if (a == 0x7F && b == 0 && c == 2 && d == 0 && data.length >= 2) { state.tunerNote = data[0]; state.tunerPitch = data[1]; state.tunerHasInput = true; int generation = ++tunerInputGeneration; updateTuner(); postUi(() -> { if (generation == tunerInputGeneration) { state.tunerHasInput = false; state.tunerNote = 12; updateTuner(); } }, 1000); return; }
         if (a == 0x7F && b == 0 && c == 2 && d == 6 && data.length >= 1) { state.manualMode = data[0] != 0; return; }
         // The processor uses this 4-bit packed address when a physical footswitch changes memory.
         if (a == 0 && b == 0 && c == 0 && d == 0 && data.length >= 2) { acceptDevicePatch((data[0] << 4) | data[1]); return; }
@@ -293,7 +297,7 @@ public final class MainActivity extends Activity {
     }
 
     private void queueRefresh() {
-        runOnUiThread(() -> { if (refreshQueued) return; refreshQueued = true; postUi(() -> { refreshQueued = false; if (patchTitle != null) patchTitle.setText(patchText()); if (!liveMode && !sliderTracking) renderEditor(); }, 45); });
+        runOnUiThread(() -> { if (refreshQueued) return; refreshQueued = true; postUi(() -> { refreshQueued = false; if (patchTitle != null) patchTitle.setText(patchText()); if (liveMode) refreshLivePatchControls(); else if (!sliderTracking) renderEditor(); }, 45); });
     }
 
     private void toggle(Block block) { int idx = indexOf(block); if (!block.switchable) return; state.enabled[idx] = !state.enabled[idx]; send(block, 0, state.enabled[idx] ? 1 : 0); renderEditor(); }
@@ -333,7 +337,8 @@ public final class MainActivity extends Activity {
         if (pendingPatchSync >= 0) completePatchChange(); else if (changed) requestFullSync();
     }
     private void completePatchChange() { if (pendingPatchSync >= 0) { pendingPatchSync = -1; requestFullSync(); } }
-    private void exitLive() { liveMode = false; bankDial = null; slotDial = null; setContentView(buildEditorView()); queueRefresh(); }
+    private void refreshLivePatchControls() { if (bankDial == null) return; int index = state.patch % 36; bankDial.setValue(index / 4); slotDial.setValue(index % 4); syncingLiveGroup = true; if (liveGroupSwitch != null) liveGroupSwitch.setChecked(state.patch >= 36); if (liveGroupLabel != null) liveGroupLabel.setText(state.patch < 36 ? "USER" : "PRESET"); syncingLiveGroup = false; }
+    private void exitLive() { liveMode = false; bankDial = null; slotDial = null; liveGroupLabel = null; liveGroupSwitch = null; setContentView(buildEditorView()); queueRefresh(); }
     private void showWriteDialog() {
         LinearLayout body = column(); body.setPadding(dp(20), 0, dp(20), 0); EditText name = new EditText(this); name.setHint(t("音色名称", "Patch name")); name.setText(patchName()); body.addView(name, match());
         Spinner slot = simpleSpinner(userSlots()); body.addView(slot, match()); new AlertDialog.Builder(this).setTitle(t("写入当前音色", "Write current patch")).setView(body).setNegativeButton(t("取消", "Cancel"), null).setPositiveButton(t("写入", "Write"), (d, x) -> { try { midi.sendDt1(0x20, 0, 0, 0, asciiName(name.getText().toString())); midi.sendDt1(0x7F, 0, 1, 4, new int[] { 0, slot.getSelectedItemPosition() }); setStatus(t("已写入", "Written"), false); } catch (RuntimeException e) { setStatus(e.getMessage(), true); } }).show();
@@ -344,7 +349,7 @@ public final class MainActivity extends Activity {
         new AlertDialog.Builder(this).setTitle(t("全局设置", "Settings")).setItems(actions, (d, which) -> { if (which == 0) requestFullSync(); else if (which == 1) showTunerSettings(); else if (which == 2) showLanguage(); else showAbout(); }).show();
     }
 
-    private void showAbout() { new AlertDialog.Builder(this).setTitle(t("关于", "About")).setMessage(t("版本号：1.0\n功能说明：用于 ME-90 的本地连接、音色与效果控制。", "Version: 1.0\nFunction: Local patch and effect control for ME-90.")).setPositiveButton("OK", null).show(); }
+    private void showAbout() { new AlertDialog.Builder(this).setTitle(t("关于", "About")).setMessage(t("版本号：1.0.1\n功能说明：用于 ME-90 的本地连接、音色与效果控制。", "Version: 1.0.1\nFunction: Local patch and effect control for ME-90.")).setPositiveButton("OK", null).show(); }
 
     private void showLanguage() { new AlertDialog.Builder(this).setTitle(t("语言", "Language")).setSingleChoiceItems(new String[] { "中文", "English" }, chinese ? 0 : 1, (d, value) -> { chinese = value == 0; setContentView(liveMode ? buildLiveView() : buildEditorView()); d.dismiss(); }).show(); }
 
@@ -355,7 +360,7 @@ public final class MainActivity extends Activity {
 
     private void showTuner() {
         LinearLayout body = column(); body.setGravity(Gravity.CENTER_HORIZONTAL); body.setPadding(dp(24), dp(12), dp(24), dp(14));
-        state.tunerHasInput = false;
+        state.tunerHasInput = false; state.tunerNote = 12; tunerInputGeneration++;
         tunerNote = text(noteName(state.tunerNote), 52, GREEN, true); tunerNote.setGravity(Gravity.CENTER); body.addView(tunerNote, match());
         tunerMeter = new TunerMeter(this); body.addView(tunerMeter, new LinearLayout.LayoutParams(-1, dp(118)));
         LinearLayout direction = new LinearLayout(this); direction.setGravity(Gravity.CENTER_VERTICAL);
@@ -364,7 +369,7 @@ public final class MainActivity extends Activity {
         TextView high = text(t("偏高 ♯", "HIGHER ♯"), 12, MUTED, true); high.setGravity(Gravity.RIGHT); direction.addView(high, new LinearLayout.LayoutParams(0, -2, 1)); body.addView(direction, match());
         tunerMeter.setPitch(state.tunerHasInput ? state.tunerPitch : -1);
         try { midi.sendParameter(0x7F, 0, 0, 2, 2); } catch (RuntimeException e) { setStatus(e.getMessage(), true); }
-        new AlertDialog.Builder(this).setTitle(t("调音器", "Tuner")).setView(body).setNegativeButton(t("关闭", "Close"), (d, x) -> { try { midi.sendParameter(0x7F, 0, 0, 2, 1); } catch (RuntimeException ignored) { } tunerNote = null; tunerPitch = null; tunerMeter = null; }).show();
+        new AlertDialog.Builder(this).setTitle(t("调音器", "Tuner")).setView(body).setNegativeButton(t("关闭", "Close"), (d, x) -> { try { midi.sendParameter(0x7F, 0, 0, 2, 1); } catch (RuntimeException ignored) { } tunerInputGeneration++; state.tunerHasInput = false; tunerNote = null; tunerPitch = null; tunerMeter = null; }).show();
     }
 
     private void updateTuner() { runOnUiThread(() -> { if (tunerNote != null) tunerNote.setText(noteName(state.tunerNote)); if (tunerPitch != null) tunerPitch.setText(tunerText()); if (tunerMeter != null) tunerMeter.setPitch(state.tunerHasInput ? state.tunerPitch : -1); }); }
@@ -374,7 +379,7 @@ public final class MainActivity extends Activity {
     private int indexOf(Block block) { for (int i = 0; i < BLOCKS.length; i++) if (BLOCKS[i] == block) return i; return 0; }
     private String patchText() {
         String name = patchName();
-        if (liveMode && state.patch < 36) return "USER " + (state.patch / 4 + 1) + "-" + (state.patch % 4 + 1) + (name.isEmpty() ? "" : "\n" + name);
+        if (liveMode) { int index = state.patch % 36; return (state.patch < 36 ? "USER " : "PRESET ") + (index / 4 + 1) + "-" + (index % 4 + 1) + (name.isEmpty() ? "" : "\n" + name); }
         return (state.patch < 36 ? "USER " : "PRESET ") + String.format("%02d", state.patch % 36 + 1) + (name.isEmpty() ? "" : " · " + name);
     }
     private String patchName() { return new String(toBytes(state.patchNameBytes), StandardCharsets.US_ASCII).trim(); }

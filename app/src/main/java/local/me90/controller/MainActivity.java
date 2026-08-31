@@ -34,6 +34,8 @@ import java.util.List;
 
 /** Offline editor for a directly connected processor. */
 public final class MainActivity extends Activity {
+    private static final String PREFERENCES = "stage90_preferences";
+    private static final String KEY_LANGUAGE_CHINESE = "language_chinese";
     private static final int BG = Color.rgb(17, 12, 31);
     private static final int SURFACE = Color.rgb(37, 24, 61);
     private static final int SURFACE_ALT = Color.rgb(50, 33, 79);
@@ -68,7 +70,7 @@ public final class MainActivity extends Activity {
     private TextView status, patchTitle, selectedTitle, tunerNote, tunerPitch, liveGroupLabel;
     private TunerMeter tunerMeter;
     private Block selectedBlock;
-    private boolean chinese = true, building, refreshQueued, liveMode, sliderTracking, syncingLiveGroup;
+    private boolean chinese, building, refreshQueued, liveMode, sliderTracking, syncingLiveGroup;
     private int connectionPhase, pendingPatchSync = -1, tunerInputGeneration;
     private PatchDial bankDial, slotDial;
     private Switch liveGroupSwitch;
@@ -90,6 +92,7 @@ public final class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        chinese = getSharedPreferences(PREFERENCES, MODE_PRIVATE).getBoolean(KEY_LANGUAGE_CHINESE, false);
         Arrays.fill(state.enabled, true);
         midi = new UsbMidiClient(this, new UsbMidiClient.Listener() {
             @Override public void onConnected(UsbDevice device) { runOnUiThread(() -> { setStatus(t("已连接，正在验证", "Connected · preparing"), false); connectionPhase = 1; try { midi.requestIdentity(); } catch (RuntimeException ignored) { beginHandshake(); } postUi(() -> { if (connectionPhase == 1) beginHandshake(); }, 600); }); }
@@ -351,7 +354,7 @@ public final class MainActivity extends Activity {
 
     private void showAbout() { new AlertDialog.Builder(this).setTitle(t("关于", "About")).setMessage(t("版本号：1.0.2\n功能说明：用于 ME-90 的本地连接、音色与效果控制。", "Version: 1.0.2\nFunction: Local patch and effect control for ME-90.")).setPositiveButton("OK", null).show(); }
 
-    private void showLanguage() { new AlertDialog.Builder(this).setTitle(t("语言", "Language")).setSingleChoiceItems(new String[] { "中文", "English" }, chinese ? 0 : 1, (d, value) -> { chinese = value == 0; setContentView(liveMode ? buildLiveView() : buildEditorView()); d.dismiss(); }).show(); }
+    private void showLanguage() { new AlertDialog.Builder(this).setTitle(t("语言", "Language")).setSingleChoiceItems(new String[] { "中文", "English" }, chinese ? 0 : 1, (d, value) -> { chinese = value == 0; getSharedPreferences(PREFERENCES, MODE_PRIVATE).edit().putBoolean(KEY_LANGUAGE_CHINESE, chinese).apply(); setContentView(liveMode ? buildLiveView() : buildEditorView()); d.dismiss(); }).show(); }
 
     private void showTunerSettings() {
         LinearLayout body = column(); body.setPadding(dp(20), 0, dp(20), 0); Spinner output = simpleSpinner(new String[] { "MUTE", "THRU" }); output.setSelection(clamp(state.tunerMute, 0, 1)); Spinner pitch = simpleSpinner(new String[] { "435 Hz", "436 Hz", "437 Hz", "438 Hz", "439 Hz", "440 Hz", "441 Hz", "442 Hz", "443 Hz", "444 Hz", "445 Hz" }); pitch.setSelection(clamp(state.tunerPitchRef, 0, 10)); body.addView(text(t("输出", "OUTPUT"), 12, MUTED, true)); body.addView(output, match()); body.addView(text(t("基准音高", "REFERENCE PITCH"), 12, MUTED, true)); body.addView(pitch, match());

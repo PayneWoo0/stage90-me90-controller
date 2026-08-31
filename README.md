@@ -2,17 +2,17 @@
 
 [⬇ 下载最新 APK / Download the latest APK](https://github.com/PayneWoo0/stage90-me90-controller/releases/tag/v1.0.2)
 
-让 Android 手机通过一根 OTG 线直接控制 BOSS ME-90。无需额外购买蓝牙适配器，也不必携带电脑；连接手机即可编辑音色、调整效果，并用于现场演出。
+让 Android 手机通过一根 USB-C 数据线直接控制 BOSS ME-90。无需额外购买蓝牙适配器，也不必携带电脑；连接手机即可编辑音色、调整效果，并用于现场演出。
 
-Control BOSS ME-90 directly from an Android phone over a single OTG cable. No extra Bluetooth adapter or computer is needed—connect your phone to edit patches, shape effects, and use it on stage.
+Control BOSS ME-90 directly from an Android phone over a single USB-C data cable. No extra Bluetooth adapter or computer is needed—connect your phone to edit patches, shape effects, and use it on stage.
 
 ## 主要功能 / Features
 
 ### 有线直连控制 / Direct wired control
 
-使用手机的 USB-C/OTG 接口直接连接 ME-90，享受稳定、低延迟的参数控制体验。适合不想额外购买无线模块，或希望把编辑器随身带在手机上的吉他手。
+使用手机的 USB-C 接口直接连接 ME-90，享受稳定、低延迟的参数控制体验。适合不想额外购买无线模块，或希望把编辑器随身带在手机上的吉他手。
 
-Connect the ME-90 directly through your phone's USB-C/OTG port for stable, responsive parameter control. Ideal for guitarists who do not want to buy an additional wireless module or carry a computer.
+Connect the ME-90 directly through your phone's USB-C port for stable, responsive parameter control. Ideal for guitarists who do not want to buy an additional wireless module or carry a computer.
 
 ### 完整效果链编辑 / Full effect-chain editing
 
@@ -40,10 +40,10 @@ The built-in tuner shows note name, flat/sharp direction, and a visual needle. I
 
 ## 使用要求 / Requirements
 
-- Android 8.0 或更高版本，并支持 USB OTG。\
-  Android 8.0 or later with USB OTG support.
-- BOSS ME-90 与可用的数据线。\
-  A BOSS ME-90 and a data-capable USB cable.
+- Android 8.0 或更高版本，并支持 USB-C 外设连接。\
+  Android 8.0 or later with USB-C host support.
+- BOSS ME-90 与可用的 USB-C 数据线。\
+  A BOSS ME-90 and a data-capable USB-C cable.
 - 安装后连接设备，并在 Android 系统提示时授予 USB 访问权限。\
   After installation, connect the device and grant USB access when Android asks.
 
@@ -88,6 +88,6 @@ The generated APK is located at `app/build/outputs/apk/debug/Stage90-v1.0.2.apk`
 
 ## 许可证 / License
 
-本项目代码计划采用 MIT License 发布。BOSS 和 ME-90 是其各自权利人的商标；本项目与其不存在官方关联或背书关系。
+本项目代码采用 MIT License 发布。BOSS 和 ME-90 是其各自权利人的商标；本项目与其不存在官方关联或背书关系。
 
-This project's code is intended to be released under the MIT License. BOSS and ME-90 are trademarks of their respective owners; this project is not affiliated with or endorsed by them.
+This project's code is released under the MIT License. BOSS and ME-90 are trademarks of their respective owners; this project is not affiliated with or endorsed by them.

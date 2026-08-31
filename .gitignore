@@ -3,3 +3,4 @@ build/
 local.properties
 tools/
 *.iml
+AGENTS.md

@@ -40,14 +40,15 @@ The built-in tuner shows note name, flat/sharp direction, and a visual needle. I
 
 ## 使用要求 / Requirements
 
-- Android 8.0 或更高版本，并支持 USB OTG。  
+- Android 8.0 或更高版本，并支持 USB OTG。\
   Android 8.0 or later with USB OTG support.
-- BOSS ME-90 与可用的数据线。  
+- BOSS ME-90 与可用的数据线。\
   A BOSS ME-90 and a data-capable USB cable.
-- 安装后连接设备，并在 Android 系统提示时授予 USB 访问权限。  
+- 安装后连接设备，并在 Android 系统提示时授予 USB 访问权限。\
   After installation, connect the device and grant USB access when Android asks.
 
-> 写入 USER 音色会覆盖目标槽位，请先备份重要音色。  
+> 写入 USER 音色会覆盖目标槽位，请先备份重要音色。
+>
 > Writing a USER patch overwrites the selected slot; back up important patches first.
 
 ## 工作原理 / How it works

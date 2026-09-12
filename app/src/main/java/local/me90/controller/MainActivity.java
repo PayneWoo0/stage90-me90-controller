@@ -192,7 +192,7 @@ public final class MainActivity extends Activity {
 
     private void addTypeSelectors(Block block) {
         int idx = indexOf(block); addSpinner(t("类型", "TYPE"), block.main, state.type[idx], value -> {
-            state.type[idx] = value; state.subtype[idx] = 0; send(block, 1, value + 1); if (block.alt != null && value == block.main.length - 1) send(block, 2, 0); renderEditor();
+            state.type[idx] = value; state.subtype[idx] = 0; send(block, 1, value); if (block.alt != null && value == block.main.length - 1) send(block, 2, 0); renderEditor();
         });
         if (block.alt != null && state.type[idx] == block.main.length - 1) addSpinner(t("可选效果", "SELECTABLE"), block.alt, state.subtype[idx], value -> { state.subtype[idx] = value; send(block, 2, value); renderEditor(); });
     }
@@ -292,7 +292,7 @@ public final class MainActivity extends Activity {
             int idx = indexOf(block);
             if (block.id.equals("CAB") && offset == 8) { state.cab = value; return; }
             if (offset == 0 && block.switchable) state.enabled[idx] = value != 0;
-            else if (offset == 1 && block.main != null) state.type[idx] = clamp(value - 1, 0, block.main.length - 1);
+            else if (offset == 1 && block.main != null) state.type[idx] = clamp(value, 0, block.main.length - 1);
             else if (offset == 2 && block.alt != null) state.subtype[idx] = clamp(value, 0, block.alt.length - 1);
             else if (offset >= 0 && offset < state.parameter[idx].length) state.parameter[idx][offset] = value;
             return;
@@ -352,7 +352,7 @@ public final class MainActivity extends Activity {
         new AlertDialog.Builder(this).setTitle(t("全局设置", "Settings")).setItems(actions, (d, which) -> { if (which == 0) requestFullSync(); else if (which == 1) showTunerSettings(); else if (which == 2) showLanguage(); else showAbout(); }).show();
     }
 
-    private void showAbout() { new AlertDialog.Builder(this).setTitle(t("关于", "About")).setMessage(t("版本号：1.0.2\n功能说明：用于 ME-90 的本地连接、音色与效果控制。", "Version: 1.0.2\nFunction: Local patch and effect control for ME-90.")).setPositiveButton("OK", null).show(); }
+    private void showAbout() { new AlertDialog.Builder(this).setTitle(t("关于", "About")).setMessage(t("版本号：1.0.3\n功能说明：用于 ME-90 的本地连接、音色与效果控制。\n项目主页：https://github.com/PayneWoo0/stage90-me90-controller\n本软件开源且免费。", "Version: 1.0.3\nFunction: Local patch and effect control for ME-90.\nProject: https://github.com/PayneWoo0/stage90-me90-controller\nThis app is free and open source.")).setPositiveButton("OK", null).show(); }
 
     private void showLanguage() { new AlertDialog.Builder(this).setTitle(t("语言", "Language")).setSingleChoiceItems(new String[] { "中文", "English" }, chinese ? 0 : 1, (d, value) -> { chinese = value == 0; getSharedPreferences(PREFERENCES, MODE_PRIVATE).edit().putBoolean(KEY_LANGUAGE_CHINESE, chinese).apply(); setContentView(liveMode ? buildLiveView() : buildEditorView()); d.dismiss(); }).show(); }
 

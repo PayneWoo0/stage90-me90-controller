@@ -1,6 +1,6 @@
 # Stage 90
 
-[⬇ 下载最新 APK / Download the latest APK](https://github.com/PayneWoo0/stage90-me90-controller/releases/tag/v1.0.2)
+[⬇ 下载最新 APK / Download the latest APK](https://github.com/PayneWoo0/stage90-me90-controller/releases/tag/v1.0.3)
 
 让 Android 手机通过一根 USB-C 数据线直接控制 BOSS ME-90。无需额外购买蓝牙适配器，也不必携带电脑；连接手机即可编辑音色、调整效果，并用于现场演出。
 
@@ -82,9 +82,9 @@ $env:ANDROID_HOME=(Resolve-Path '.\tools\android-sdk').Path
 .\tools\gradle-8.10.2\bin\gradle.bat --offline --no-daemon --console=plain :app:packageDebug
 ```
 
-生成的 APK 位于 `app/build/outputs/apk/debug/Stage90-v1.0.2.apk`。
+生成的 APK 位于 `app/build/outputs/apk/debug/Stage90-v1.0.3.apk`。
 
-The generated APK is located at `app/build/outputs/apk/debug/Stage90-v1.0.2.apk`.
+The generated APK is located at `app/build/outputs/apk/debug/Stage90-v1.0.3.apk`.
 
 ## 许可证 / License
 
